@@ -77,31 +77,43 @@ const buildChecklist = () => {
 };
 
 const shell = (title, body) => `<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>${title}</title><style>
-body{font-family:Inter,system-ui,sans-serif;background:#f3f8f5;color:#10231b;margin:0}.wrap{max-width:1100px;margin:0 auto;padding:20px}
-.card{background:#fff;border:1px solid #d8e6de;border-radius:14px;padding:16px;margin:12px 0}.btn{display:inline-block;background:#2ea36b;color:#fff;padding:10px 14px;border-radius:9px;text-decoration:none;border:0;cursor:pointer}
-.btn.alt{background:#fff;color:#2ea36b;border:1px solid #9ecfb7}
+body{font-family:Inter,system-ui,sans-serif;background:#f3f7ff;color:#10213f;margin:0}.wrap{max-width:1100px;margin:0 auto;padding:20px}
+.card{background:#fff;border:1px solid #d7e1f5;border-radius:14px;padding:16px;margin:12px 0}.btn{display:inline-block;background:#2d6cdf;color:#fff;padding:8px 12px;border-radius:8px;text-decoration:none;border:0;cursor:pointer;font-size:14px}
+.btn.alt{background:#fff;color:#2d6cdf;border:1px solid #9bb8ef}
 input,textarea,select{width:100%;max-width:100%;padding:9px;border:1px solid #d8e6de;border-radius:8px;box-sizing:border-box;font-size:16px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 table{width:100%;border-collapse:collapse;display:block;overflow-x:auto}
 th,td{padding:8px;border-bottom:1px solid #edf3ef;text-align:left;white-space:nowrap}
-.badge{padding:2px 8px;border-radius:999px;background:#eaf6ef}.small{font-size:12px;color:#5a7168}
+.badge{padding:2px 8px;border-radius:999px;background:#eaf0ff;color:#254a95}.small{font-size:12px;color:#5a6788}
 @media(max-width:900px){
   .wrap{padding:12px}
   .card{padding:12px;margin:10px 0}
   .grid{grid-template-columns:1fr}
-  .btn{display:block;width:100%;text-align:center;margin-bottom:8px}
+  .btn{display:inline-block;width:auto;text-align:center;margin-bottom:6px}
   input,textarea,select{font-size:15px;padding:8px}
 }
 </style></head><body><div class='wrap'>${body}</div></body></html>`;
 
 const auth = (req, res, next) => req.session.user ? next() : res.redirect('/login');
-const ensureSurvey = (req) => {
-  if (!req.session.survey) req.session.survey = {
-    vessel: { name: '', model: '', year: '', location: '', seller: '', askPrice: '' },
-    checklist: buildChecklist(),
-    marketValue: '', repairs: '', contingencyPct: '20', discountPct: '7'
-  };
+const makeSurvey = () => ({
+  vessel: { name: '', model: '', year: '', location: '', seller: '', askPrice: '' },
+  checklist: buildChecklist(),
+  marketValue: '', repairs: '', contingencyPct: '20', discountPct: '7'
+});
+const ensureSurveyData = (req) => {
+  if (req.session.survey && !req.session.data) {
+    req.session.data = { boats: [{ id: 'boat-1', label: req.session.survey.vessel?.name || 'Boat 1', survey: req.session.survey }], activeBoatId: 'boat-1' };
+    delete req.session.survey;
+  }
+  if (!req.session.data) {
+    req.session.data = { boats: [{ id: 'boat-1', label: 'Boat 1', survey: makeSurvey() }], activeBoatId: 'boat-1' };
+  }
 };
+const activeBoat = (req) => {
+  ensureSurveyData(req);
+  return req.session.data.boats.find(b => b.id === req.session.data.activeBoatId) || req.session.data.boats[0];
+};
+const activeSurvey = (req) => activeBoat(req).survey;
 
 app.get('/', (req, res) => res.send(shell('DeepKeel Survey', `<div class='card'><h1>DeepKeel Survey</h1><p>Professional sailboat self-survey and negotiation system.</p><p><a class='btn' href='${req.session.user ? '/app' : '/login'}'>${req.session.user ? 'Open App' : 'Login'}</a></p></div>`)));
 
@@ -110,7 +122,7 @@ app.get('/login', (_, res) => res.send(shell('Login', `<div class='card'><h2>Log
 app.post('/login', (req, res) => {
   if ((req.body.email || '').trim().toLowerCase() === adminEmail.toLowerCase() && (req.body.password || '') === adminPassword) {
     req.session.user = { email: adminEmail };
-    ensureSurvey(req);
+    ensureSurveyData(req);
     return res.redirect('/app');
   }
   res.status(401).send(shell('Login failed', `<div class='card'><p>Invalid credentials.</p><p><a class='btn alt' href='/login'>Try again</a></p></div>`));
@@ -119,24 +131,51 @@ app.post('/login', (req, res) => {
 app.get('/logout', (req, res) => req.session.destroy(() => res.redirect('/')));
 
 app.get('/app', auth, (req, res) => {
-  ensureSurvey(req);
-  const s = req.session.survey;
+  ensureSurveyData(req);
+  const s = activeSurvey(req);
+  const boat = activeBoat(req);
   const critical = s.checklist.filter(i => i.rating === 'Critical').length;
   const moderate = s.checklist.filter(i => i.rating === 'Moderate').length;
   const bci = Math.max(0, 100 - (critical * 5 + moderate * 2));
-  res.send(shell('Dashboard', `<div class='card'><h1>DeepKeel Dashboard</h1><p>BCI: <strong>${bci}/100</strong> • Critical: ${critical} • Moderate: ${moderate}</p><p><a class='btn' href='/survey/vessel'>Vessel Info</a> <a class='btn alt' href='/survey/checklist'>Checklist</a> <a class='btn alt' href='/survey/negotiation'>Negotiation</a> <a class='btn alt' href='/survey/report?print=1'>Printable report</a> <a class='btn alt' href='/logout'>Logout</a></p></div>`));
+  const options = req.session.data.boats.map(b => `<option value='${b.id}' ${b.id===req.session.data.activeBoatId?'selected':''}>${b.label}</option>`).join('');
+  res.send(shell('Dashboard', `<div class='card'><h1>DeepKeel Dashboard</h1><p>Active boat: <strong>${boat.label}</strong></p><p>BCI: <strong>${bci}/100</strong> • Critical: ${critical} • Moderate: ${moderate}</p>
+    <form method='post' action='/boats/switch' class='grid'>
+      <p><label>Switch boat</label><select name='boatId'>${options}</select></p>
+      <p style='align-self:end'><button class='btn alt'>Switch</button></p>
+    </form>
+    <form method='post' action='/boats/add' class='grid'>
+      <p><label>New boat label</label><input name='label' placeholder='e.g. Jeanneau Sun Shine 36'></p>
+      <p style='align-self:end'><button class='btn'>Add Boat</button></p>
+    </form>
+    <p><a class='btn' href='/survey/vessel'>Vessel Info</a> <a class='btn alt' href='/survey/checklist'>Checklist</a> <a class='btn alt' href='/survey/negotiation'>Negotiation</a> <a class='btn alt' href='/survey/report?print=1'>Printable report</a> <a class='btn alt' href='/logout'>Logout</a></p></div>`));
+});
+
+app.post('/boats/add', auth, (req, res) => {
+  ensureSurveyData(req);
+  const label = (req.body.label || '').trim() || `Boat ${req.session.data.boats.length + 1}`;
+  const id = `boat-${Date.now()}`;
+  req.session.data.boats.push({ id, label, survey: makeSurvey() });
+  req.session.data.activeBoatId = id;
+  res.redirect('/app');
+});
+
+app.post('/boats/switch', auth, (req, res) => {
+  ensureSurveyData(req);
+  const target = req.body.boatId;
+  if (req.session.data.boats.some(b => b.id === target)) req.session.data.activeBoatId = target;
+  res.redirect('/app');
 });
 
 app.get('/survey/vessel', auth, (req, res) => {
-  ensureSurvey(req);
-  const v = req.session.survey.vessel;
+  ensureSurveyData(req);
+  const v = activeSurvey(req).vessel;
   res.send(shell('Vessel', `<div class='card'><h2>Vessel Information</h2><form method='post' action='/survey/vessel' class='grid'><p><label>Boat Name</label><input name='name' value='${v.name || ''}'></p><p><label>Model</label><input name='model' value='${v.model || ''}'></p><p><label>Year</label><input name='year' value='${v.year || ''}'></p><p><label>Location</label><input name='location' value='${v.location || ''}'></p><p><label>Seller</label><input name='seller' value='${v.seller || ''}'></p><p><label>Asking Price (€)</label><input name='askPrice' value='${v.askPrice || ''}'></p><p style='grid-column:1/-1'><button class='btn'>Save</button> <a class='btn alt' href='/app'>Back</a></p></form></div>`));
 });
-app.post('/survey/vessel', auth, (req, res) => { ensureSurvey(req); Object.assign(req.session.survey.vessel, req.body); res.redirect('/survey/vessel'); });
+app.post('/survey/vessel', auth, (req, res) => { ensureSurveyData(req); Object.assign(activeSurvey(req).vessel, req.body); res.redirect('/survey/vessel'); });
 
 app.get('/survey/checklist', auth, (req, res) => {
-  ensureSurvey(req);
-  const rows = req.session.survey.checklist.map(i => `<tr><td>${i.id}</td><td>${i.section}</td><td>${i.title}<div class='small'>${(i.photos||[]).length} photo(s)</div></td><td><span class='badge'>${i.rating}</span></td><td>${i.notes || ''}</td></tr>`).join('');
+  ensureSurveyData(req);
+  const rows = activeSurvey(req).checklist.map(i => `<tr><td>${i.id}</td><td>${i.section}</td><td>${i.title}<div class='small'>${(i.photos||[]).length} photo(s)</div></td><td><span class='badge'>${i.rating}</span></td><td>${i.notes || ''}</td></tr>`).join('');
   res.send(shell('Checklist', `
     <div class='card'>
       <h2>120-Point Checklist</h2>
@@ -173,24 +212,24 @@ app.get('/survey/checklist', auth, (req, res) => {
 });
 
 app.post('/survey/checklist/rate', auth, (req, res) => {
-  ensureSurvey(req);
+  ensureSurveyData(req);
   const id = Number(req.body.id || 0);
-  const row = req.session.survey.checklist.find(x => x.id === id);
+  const row = activeSurvey(req).checklist.find(x => x.id === id);
   if (row) { row.rating = req.body.rating || 'OK'; row.notes = req.body.notes || ''; }
   res.redirect('/survey/checklist');
 });
 
 app.post('/survey/checklist/photo', auth, upload.single('photo'), (req, res) => {
-  ensureSurvey(req);
+  ensureSurveyData(req);
   const id = Number(req.body.id || 0);
-  const row = req.session.survey.checklist.find(x => x.id === id);
+  const row = activeSurvey(req).checklist.find(x => x.id === id);
   if (row && req.file) row.photos.push(`/uploads/${req.file.filename}`);
   res.redirect('/survey/checklist');
 });
 
 app.get('/survey/negotiation', auth, (req, res) => {
-  ensureSurvey(req);
-  const s = req.session.survey;
+  ensureSurveyData(req);
+  const s = activeSurvey(req);
   const crit = s.checklist.filter(i => i.rating === 'Critical').length;
   const mod = s.checklist.filter(i => i.rating === 'Moderate').length;
   const bci = Math.max(0, 100 - (crit * 5 + mod * 2));
@@ -202,11 +241,11 @@ app.get('/survey/negotiation', auth, (req, res) => {
   const final = Math.max(0, afterRepairs * (1 - Number(s.discountPct || 0) / 100));
   res.send(shell('Negotiation', `<div class='card'><h2>Negotiation Calculator</h2><form method='post' action='/survey/negotiation' class='grid'><p><label>Market Value (€)</label><input name='marketValue' value='${s.marketValue || ''}'></p><p><label>Estimated Repairs (€)</label><input name='repairs' value='${s.repairs || ''}'></p><p><label>Contingency %</label><input name='contingencyPct' value='${s.contingencyPct || '20'}'></p><p><label>Opportunity Discount %</label><input name='discountPct' value='${s.discountPct || '7'}'></p><p><button class='btn'>Calculate</button> <a class='btn alt' href='/app'>Back</a></p></form><hr><p>BCI: <strong>${bci}</strong></p><p>Adjusted value: <strong>€${condAdj.toFixed(0)}</strong></p><p>After repairs + contingency: <strong>€${afterRepairs.toFixed(0)}</strong></p><p>Final offer suggestion: <strong>€${final.toFixed(0)}</strong></p></div>`));
 });
-app.post('/survey/negotiation', auth, (req, res) => { ensureSurvey(req); Object.assign(req.session.survey, req.body); res.redirect('/survey/negotiation'); });
+app.post('/survey/negotiation', auth, (req, res) => { ensureSurveyData(req); Object.assign(activeSurvey(req), req.body); res.redirect('/survey/negotiation'); });
 
 app.get('/survey/report', auth, (req, res) => {
-  ensureSurvey(req);
-  const s = req.session.survey;
+  ensureSurveyData(req);
+  const s = activeSurvey(req);
   const crit = s.checklist.filter(i => i.rating === 'Critical');
   const mod = s.checklist.filter(i => i.rating === 'Moderate');
   const bci = Math.max(0, 100 - (crit.length * 5 + mod.length * 2));
