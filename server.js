@@ -126,7 +126,7 @@ const activeSurvey = (req) => activeBoat(req).survey;
 
 const readStore = () => {
   try { return JSON.parse(fs.readFileSync(dataFile, 'utf-8')); }
-  catch { return { users: {} }; }
+  catch { return { users: {}, globalImages: {} }; }
 };
 const writeStore = (obj) => fs.writeFileSync(dataFile, JSON.stringify(obj, null, 2));
 const loadUserData = (email) => {
@@ -137,6 +137,17 @@ const saveUserData = (email, data) => {
   const store = readStore();
   if (!store.users) store.users = {};
   store.users[email] = data;
+  writeStore(store);
+};
+
+const loadGlobalImages = () => {
+  const store = readStore();
+  return store.globalImages || {};
+};
+const saveGlobalImage = (itemId, imagePath) => {
+  const store = readStore();
+  if (!store.globalImages) store.globalImages = {};
+  store.globalImages[String(itemId)] = imagePath;
   writeStore(store);
 };
 
@@ -179,7 +190,7 @@ app.get('/app', auth, (req, res) => {
       <p><label>Delete boat</label><select name='boatId'>${options}</select></p>
       <p style='align-self:end'><button class='btn alt' onclick="return confirm('Delete this boat and all its data/photos references?')">Delete Boat</button></p>
     </form>
-    <p><a class='btn' href='/survey/vessel'>Vessel Info</a> <a class='btn alt' href='/survey/checklist'>Checklist</a> <a class='btn alt' href='/survey/gallery'>Image Gallery</a> <a class='btn alt' href='/survey/negotiation'>Negotiation</a> <a class='btn alt' href='/survey/report?print=1'>Printable report</a> <a class='btn alt' href='/logout'>Logout</a></p></div>`));
+    <p><a class='btn' href='/survey/vessel'>Vessel Info</a> <a class='btn alt' href='/survey/checklist'>Checklist</a> <a class='btn alt' href='/survey/gallery'>Image Gallery</a> <a class='btn alt' href='/admin/global-images'>Global Images</a> <a class='btn alt' href='/survey/negotiation'>Negotiation</a> <a class='btn alt' href='/survey/report?print=1'>Printable report</a> <a class='btn alt' href='/logout'>Logout</a></p></div>`));
 });
 
 app.post('/boats/add', auth, (req, res) => {
@@ -231,10 +242,14 @@ app.get('/survey/checklist', auth, (req, res) => {
     return 'Inspect operation, wear, corrosion, leaks, and safety impact. Mark severity based on purchase risk.';
   };
 
-  const cards = activeSurvey(req).checklist.map(i => `
+  const globalImages = loadGlobalImages();
+  const cards = activeSurvey(req).checklist.map(i => {
+    const gImg = globalImages[String(i.id)] || '';
+    return `
     <details class='card'>
       <summary><strong>#${i.id} — ${i.title}</strong> <span class='small'>(${i.section}) • ${i.rating} • ${(i.photos||[]).length} photo(s)</span></summary>
       <p class='small' style='margin-top:8px'><strong>What to check:</strong> ${guidance(i.section)}</p>
+      ${gImg ? `<div style='margin:8px 0'><div class='small'>Global reference</div><img src='${gImg}' style='max-width:180px;border:1px solid #2f415a;border-radius:8px'></div>` : ''}
       <form method='post' action='/survey/checklist/item/${i.id}' class='grid'>
         <p><label>Rating</label><select name='rating'>
           <option ${i.rating==='OK'?'selected':''}>OK</option>
@@ -251,7 +266,8 @@ app.get('/survey/checklist', auth, (req, res) => {
       </form>
       ${(i.photos||[]).length ? `<div>${i.photos.map(ph=>`<span style='display:inline-block;margin:4px'><img src='${ph}' style='max-width:120px;border:1px solid #d7e1f5;border-radius:8px;display:block'><form method='post' action='/survey/checklist/item/${i.id}/photo/delete' style='margin-top:4px'><input type='hidden' name='photo' value='${ph}'><button class='btn alt' style='font-size:12px;padding:4px 8px'>Delete Photo</button></form></span>`).join('')}</div>` : ''}
     </details>
-  `).join('');
+  `;
+  }).join('');
 
   res.send(shell('Checklist', `
     <div class='card'>
@@ -328,6 +344,59 @@ app.get('/survey/negotiation', auth, (req, res) => {
   res.send(shell('Negotiation', `<div class='card'><h2>Negotiation Calculator</h2><form method='post' action='/survey/negotiation' class='grid'><p><label>Market Value (€)</label><input name='marketValue' value='${s.marketValue || ''}'></p><p><label>Estimated Repairs (€)</label><input name='repairs' value='${s.repairs || ''}'></p><p><label>Contingency %</label><input name='contingencyPct' value='${s.contingencyPct || '20'}'></p><p><label>Opportunity Discount %</label><input name='discountPct' value='${s.discountPct || '7'}'></p><p><button class='btn'>Calculate</button> <a class='btn alt' href='/app'>Back</a></p></form><hr><p>BCI: <strong>${bci}</strong></p><p>Adjusted value: <strong>€${condAdj.toFixed(0)}</strong></p><p>After repairs + contingency: <strong>€${afterRepairs.toFixed(0)}</strong></p><p>Final offer suggestion: <strong>€${final.toFixed(0)}</strong></p></div>`));
 });
 app.post('/survey/negotiation', auth, (req, res) => { ensureSurveyData(req); Object.assign(activeSurvey(req), req.body); saveUserData(req.session.user.email, req.session.data); res.redirect('/survey/negotiation'); });
+
+app.get('/admin/global-images', auth, (req, res) => {
+  ensureSurveyData(req);
+  const list = activeSurvey(req).checklist;
+  const global = loadGlobalImages();
+  const rows = list.map(i => `
+    <tr>
+      <td>#${i.id}</td>
+      <td>${i.title}</td>
+      <td>${global[String(i.id)] ? `<img src='${global[String(i.id)]}' style='max-width:70px;border:1px solid #2f415a;border-radius:6px'>` : '-'}</td>
+      <td>
+        <form method='post' action='/admin/global-images/set' enctype='multipart/form-data' class='grid'>
+          <input type='hidden' name='id' value='${i.id}'>
+          <p><input type='text' name='url' placeholder='/uploads/.. or https://...'></p>
+          <p><input type='file' name='image' accept='image/*'></p>
+          <p><button class='btn alt'>Save</button></p>
+        </form>
+      </td>
+    </tr>
+  `).join('');
+
+  res.send(shell('Global Images', `
+    <div class='card'>
+      <h2>Global Images (one per check item)</h2>
+      <form method='post' action='/admin/global-images/placeholders'><button class='btn'>Create/Reset 120 placeholders</button></form>
+      <p class='small'>These images show in checklist as global reference examples.</p>
+      <p><a class='btn alt' href='/app'>Back</a></p>
+    </div>
+    <div class='card'><table><thead><tr><th>ID</th><th>Check</th><th>Current</th><th>Update</th></tr></thead><tbody>${rows}</tbody></table></div>
+  `));
+});
+
+app.post('/admin/global-images/set', auth, upload.single('image'), (req, res) => {
+  const id = Number(req.body.id || 0);
+  if (!id) return res.redirect('/admin/global-images');
+  let img = (req.body.url || '').trim();
+  if (req.file) img = `/uploads/${req.file.filename}`;
+  if (img) saveGlobalImage(id, img);
+  res.redirect('/admin/global-images');
+});
+
+app.post('/admin/global-images/placeholders', auth, (req, res) => {
+  ensureSurveyData(req);
+  for (const i of activeSurvey(req).checklist) {
+    const filename = `global-check-${i.id}.svg`;
+    const abs = path.join(uploadDir, filename);
+    const title = (i.title || 'Check').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='675'><rect width='1200' height='675' fill='#18325f'/><rect x='28' y='28' width='1144' height='619' rx='16' fill='none' stroke='#6ea0ff'/><text x='52' y='120' fill='#d9e7ff' font-size='58' font-family='Arial'>Reference #${i.id}</text><text x='52' y='190' fill='#ffffff' font-size='34' font-family='Arial'>${title}</text><text x='52' y='250' fill='#9fc3ff' font-size='26' font-family='Arial'>Global placeholder image for checklist item</text></svg>`;
+    fs.writeFileSync(abs, svg);
+    saveGlobalImage(i.id, `/uploads/${filename}`);
+  }
+  res.redirect('/admin/global-images');
+});
 
 app.get('/survey/report', auth, (req, res) => {
   ensureSurveyData(req);
