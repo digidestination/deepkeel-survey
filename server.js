@@ -81,14 +81,19 @@ const buildChecklist = () => {
 };
 
 const shell = (title, body) => `<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>${title}</title><style>
-body{font-family:Inter,system-ui,sans-serif;background:#f3f7ff;color:#10213f;margin:0}.wrap{max-width:1100px;margin:0 auto;padding:20px}
-.card{background:#fff;border:1px solid #d7e1f5;border-radius:14px;padding:16px;margin:12px 0}.btn{display:inline-block;background:#2d6cdf;color:#fff;padding:8px 12px;border-radius:8px;text-decoration:none;border:0;cursor:pointer;font-size:14px}
-.btn.alt{background:#fff;color:#2d6cdf;border:1px solid #9bb8ef}
-input,textarea,select{width:100%;max-width:100%;padding:9px;border:1px solid #d8e6de;border-radius:8px;box-sizing:border-box;font-size:16px}
+body{font-family:Inter,system-ui,sans-serif;background:#0c1420;color:#eaf2ff;margin:0}.wrap{max-width:1100px;margin:0 auto;padding:20px}
+.card{background:#111a26;border:1px solid #2a3a4f;border-radius:14px;padding:16px;margin:12px 0;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.btn{display:inline-block;background:#2d6cdf;color:#fff;padding:8px 12px;border-radius:8px;text-decoration:none;border:0;cursor:pointer;font-size:14px}
+.btn.alt{background:transparent;color:#9fc3ff;border:1px solid #3b5686}
+input,textarea,select{width:100%;max-width:100%;padding:9px;border:1px solid #2f415a;background:#0f1a2a;color:#eaf2ff;border-radius:8px;box-sizing:border-box;font-size:16px}
+label{color:#b9cbe5}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 table{width:100%;border-collapse:collapse;display:block;overflow-x:auto}
-th,td{padding:8px;border-bottom:1px solid #edf3ef;text-align:left;white-space:nowrap}
-.badge{padding:2px 8px;border-radius:999px;background:#eaf0ff;color:#254a95}.small{font-size:12px;color:#5a6788}
+th,td{padding:8px;border-bottom:1px solid #223347;text-align:left;white-space:nowrap}
+th{color:#b9cbe5}
+.badge{padding:2px 8px;border-radius:999px;background:#1a2a44;color:#9fc3ff}.small{font-size:12px;color:#8ea4c4}
+summary{cursor:pointer}
+a{color:#9fc3ff}
 @media(max-width:900px){
   .wrap{padding:12px}
   .card{padding:12px;margin:10px 0}
