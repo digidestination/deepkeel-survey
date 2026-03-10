@@ -79,10 +79,19 @@ const buildChecklist = () => {
 const shell = (title, body) => `<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>${title}</title><style>
 body{font-family:Inter,system-ui,sans-serif;background:#f3f8f5;color:#10231b;margin:0}.wrap{max-width:1100px;margin:0 auto;padding:20px}
 .card{background:#fff;border:1px solid #d8e6de;border-radius:14px;padding:16px;margin:12px 0}.btn{display:inline-block;background:#2ea36b;color:#fff;padding:10px 14px;border-radius:9px;text-decoration:none;border:0;cursor:pointer}
-.btn.alt{background:#fff;color:#2ea36b;border:1px solid #9ecfb7}input,textarea,select{width:100%;padding:9px;border:1px solid #d8e6de;border-radius:8px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #edf3ef;text-align:left}
+.btn.alt{background:#fff;color:#2ea36b;border:1px solid #9ecfb7}
+input,textarea,select{width:100%;max-width:100%;padding:9px;border:1px solid #d8e6de;border-radius:8px;box-sizing:border-box;font-size:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+table{width:100%;border-collapse:collapse;display:block;overflow-x:auto}
+th,td{padding:8px;border-bottom:1px solid #edf3ef;text-align:left;white-space:nowrap}
 .badge{padding:2px 8px;border-radius:999px;background:#eaf6ef}.small{font-size:12px;color:#5a7168}
-@media(max-width:900px){.grid{grid-template-columns:1fr}}
+@media(max-width:900px){
+  .wrap{padding:12px}
+  .card{padding:12px;margin:10px 0}
+  .grid{grid-template-columns:1fr}
+  .btn{display:block;width:100%;text-align:center;margin-bottom:8px}
+  input,textarea,select{font-size:15px;padding:8px}
+}
 </style></head><body><div class='wrap'>${body}</div></body></html>`;
 
 const auth = (req, res, next) => req.session.user ? next() : res.redirect('/login');
