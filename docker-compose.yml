@@ -6,4 +6,7 @@ services:
       - .env
     ports:
       - "9890:9890"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
     restart: unless-stopped
