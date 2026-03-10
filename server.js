@@ -175,6 +175,10 @@ app.get('/app', auth, (req, res) => {
       <p><label>New boat label</label><input name='label' placeholder='e.g. Jeanneau Sun Shine 36'></p>
       <p style='align-self:end'><button class='btn'>Add Boat</button></p>
     </form>
+    <form method='post' action='/boats/delete' class='grid'>
+      <p><label>Delete boat</label><select name='boatId'>${options}</select></p>
+      <p style='align-self:end'><button class='btn alt' onclick="return confirm('Delete this boat and all its data/photos references?')">Delete Boat</button></p>
+    </form>
     <p><a class='btn' href='/survey/vessel'>Vessel Info</a> <a class='btn alt' href='/survey/checklist'>Checklist</a> <a class='btn alt' href='/survey/gallery'>Image Gallery</a> <a class='btn alt' href='/survey/negotiation'>Negotiation</a> <a class='btn alt' href='/survey/report?print=1'>Printable report</a> <a class='btn alt' href='/logout'>Logout</a></p></div>`));
 });
 
@@ -192,6 +196,18 @@ app.post('/boats/switch', auth, (req, res) => {
   ensureSurveyData(req);
   const target = req.body.boatId;
   if (req.session.data.boats.some(b => b.id === target)) req.session.data.activeBoatId = target;
+  saveUserData(req.session.user.email, req.session.data);
+  res.redirect('/app');
+});
+
+app.post('/boats/delete', auth, (req, res) => {
+  ensureSurveyData(req);
+  const boatId = req.body.boatId;
+  if (req.session.data.boats.length <= 1) return res.redirect('/app');
+  req.session.data.boats = req.session.data.boats.filter(b => b.id !== boatId);
+  if (!req.session.data.boats.some(b => b.id === req.session.data.activeBoatId)) {
+    req.session.data.activeBoatId = req.session.data.boats[0].id;
+  }
   saveUserData(req.session.user.email, req.session.data);
   res.redirect('/app');
 });
@@ -233,7 +249,7 @@ app.get('/survey/checklist', auth, (req, res) => {
         <p><label>Add photo</label><input type='file' name='photo' accept='image/*' required></p>
         <p style='align-self:end'><button class='btn alt'>Upload Photo</button></p>
       </form>
-      ${(i.photos||[]).length ? `<div>${i.photos.map(ph=>`<img src='${ph}' style='max-width:120px;margin:4px;border:1px solid #d7e1f5;border-radius:8px'>`).join('')}</div>` : ''}
+      ${(i.photos||[]).length ? `<div>${i.photos.map(ph=>`<span style='display:inline-block;margin:4px'><img src='${ph}' style='max-width:120px;border:1px solid #d7e1f5;border-radius:8px;display:block'><form method='post' action='/survey/checklist/item/${i.id}/photo/delete' style='margin-top:4px'><input type='hidden' name='photo' value='${ph}'><button class='btn alt' style='font-size:12px;padding:4px 8px'>Delete Photo</button></form></span>`).join('')}</div>` : ''}
     </details>
   `).join('');
 
@@ -265,6 +281,16 @@ app.post('/survey/checklist/item/:id/photo', auth, upload.single('photo'), (req,
   res.redirect('/survey/checklist');
 });
 
+app.post('/survey/checklist/item/:id/photo/delete', auth, (req, res) => {
+  ensureSurveyData(req);
+  const id = Number(req.params.id || 0);
+  const photo = req.body.photo || '';
+  const row = activeSurvey(req).checklist.find(x => x.id === id);
+  if (row && photo) row.photos = (row.photos || []).filter(p => p !== photo);
+  saveUserData(req.session.user.email, req.session.data);
+  res.redirect('/survey/checklist');
+});
+
 app.get('/survey/gallery', auth, (req, res) => {
   ensureSurveyData(req);
   const s = activeSurvey(req);
@@ -273,7 +299,7 @@ app.get('/survey/gallery', auth, (req, res) => {
     <div class='card'>
       <h4>#${i.id} ${i.title}</h4>
       <p class='small'>${i.section}</p>
-      <div>${(i.photos || []).map(ph => `<a href='${ph}' target='_blank' rel='noopener'><img src='${ph}' style='max-width:180px;margin:6px;border:1px solid #2f415a;border-radius:8px'></a>`).join('')}</div>
+      <div>${(i.photos || []).map(ph => `<div style='display:inline-block;margin:6px'><a href='${ph}' target='_blank' rel='noopener'><img src='${ph}' style='max-width:180px;border:1px solid #2f415a;border-radius:8px;display:block'></a><div style='margin-top:4px'><a class='btn alt' style='font-size:12px;padding:4px 8px' href='${ph}' download>Save to Photos</a> <button class='btn alt' style='font-size:12px;padding:4px 8px' onclick="if(navigator.share){navigator.share({url:'${ph}'});}return false;">Share</button><form method='post' action='/survey/checklist/item/${i.id}/photo/delete' style='display:inline-block'><input type='hidden' name='photo' value='${ph}'><button class='btn alt' style='font-size:12px;padding:4px 8px'>Delete</button></form></div></div>`).join('')}</div>
     </div>
   `).join('');
 
