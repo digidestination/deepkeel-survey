@@ -7,7 +7,11 @@ const path = require('path');
 const app = express();
 const port = 9890;
 const uploadDir = path.join(__dirname, 'uploads');
+const dataDir = path.join(__dirname, 'data');
+const dataFile = path.join(dataDir, 'deepkeel-users.json');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(dataFile)) fs.writeFileSync(dataFile, JSON.stringify({ users: {} }, null, 2));
 
 const adminEmail = process.env.DEEPKEEL_ADMIN_EMAIL || 'admin@example.com';
 const adminPassword = process.env.DEEPKEEL_ADMIN_PASSWORD || 'change-me';
@@ -115,6 +119,22 @@ const activeBoat = (req) => {
 };
 const activeSurvey = (req) => activeBoat(req).survey;
 
+const readStore = () => {
+  try { return JSON.parse(fs.readFileSync(dataFile, 'utf-8')); }
+  catch { return { users: {} }; }
+};
+const writeStore = (obj) => fs.writeFileSync(dataFile, JSON.stringify(obj, null, 2));
+const loadUserData = (email) => {
+  const store = readStore();
+  return (store.users && store.users[email]) ? store.users[email] : null;
+};
+const saveUserData = (email, data) => {
+  const store = readStore();
+  if (!store.users) store.users = {};
+  store.users[email] = data;
+  writeStore(store);
+};
+
 app.get('/', (req, res) => res.send(shell('DeepKeel Survey', `<div class='card'><h1>DeepKeel Survey</h1><p>Professional sailboat self-survey and negotiation system.</p><p><a class='btn' href='${req.session.user ? '/app' : '/login'}'>${req.session.user ? 'Open App' : 'Login'}</a></p></div>`)));
 
 app.get('/login', (_, res) => res.send(shell('Login', `<div class='card'><h2>Login</h2><form method='post' action='/login'><p><label>Email</label><input type='email' name='email' required></p><p><label>Password</label><input type='password' name='password' required></p><p><button class='btn' type='submit'>Login</button></p></form></div>`)));
@@ -122,7 +142,10 @@ app.get('/login', (_, res) => res.send(shell('Login', `<div class='card'><h2>Log
 app.post('/login', (req, res) => {
   if ((req.body.email || '').trim().toLowerCase() === adminEmail.toLowerCase() && (req.body.password || '') === adminPassword) {
     req.session.user = { email: adminEmail };
+    const persisted = loadUserData(adminEmail);
+    if (persisted) req.session.data = persisted;
     ensureSurveyData(req);
+    saveUserData(adminEmail, req.session.data);
     return res.redirect('/app');
   }
   res.status(401).send(shell('Login failed', `<div class='card'><p>Invalid credentials.</p><p><a class='btn alt' href='/login'>Try again</a></p></div>`));
@@ -156,6 +179,7 @@ app.post('/boats/add', auth, (req, res) => {
   const id = `boat-${Date.now()}`;
   req.session.data.boats.push({ id, label, survey: makeSurvey() });
   req.session.data.activeBoatId = id;
+  saveUserData(req.session.user.email, req.session.data);
   res.redirect('/app');
 });
 
@@ -163,6 +187,7 @@ app.post('/boats/switch', auth, (req, res) => {
   ensureSurveyData(req);
   const target = req.body.boatId;
   if (req.session.data.boats.some(b => b.id === target)) req.session.data.activeBoatId = target;
+  saveUserData(req.session.user.email, req.session.data);
   res.redirect('/app');
 });
 
@@ -171,7 +196,7 @@ app.get('/survey/vessel', auth, (req, res) => {
   const v = activeSurvey(req).vessel;
   res.send(shell('Vessel', `<div class='card'><h2>Vessel Information</h2><form method='post' action='/survey/vessel' class='grid'><p><label>Boat Name</label><input name='name' value='${v.name || ''}'></p><p><label>Model</label><input name='model' value='${v.model || ''}'></p><p><label>Year</label><input name='year' value='${v.year || ''}'></p><p><label>Location</label><input name='location' value='${v.location || ''}'></p><p><label>Seller</label><input name='seller' value='${v.seller || ''}'></p><p><label>Asking Price (€)</label><input name='askPrice' value='${v.askPrice || ''}'></p><p style='grid-column:1/-1'><button class='btn'>Save</button> <a class='btn alt' href='/app'>Back</a></p></form></div>`));
 });
-app.post('/survey/vessel', auth, (req, res) => { ensureSurveyData(req); Object.assign(activeSurvey(req).vessel, req.body); res.redirect('/survey/vessel'); });
+app.post('/survey/vessel', auth, (req, res) => { ensureSurveyData(req); Object.assign(activeSurvey(req).vessel, req.body); saveUserData(req.session.user.email, req.session.data); res.redirect('/survey/vessel'); });
 
 app.get('/survey/checklist', auth, (req, res) => {
   ensureSurveyData(req);
@@ -216,6 +241,7 @@ app.post('/survey/checklist/rate', auth, (req, res) => {
   const id = Number(req.body.id || 0);
   const row = activeSurvey(req).checklist.find(x => x.id === id);
   if (row) { row.rating = req.body.rating || 'OK'; row.notes = req.body.notes || ''; }
+  saveUserData(req.session.user.email, req.session.data);
   res.redirect('/survey/checklist');
 });
 
@@ -224,6 +250,7 @@ app.post('/survey/checklist/photo', auth, upload.single('photo'), (req, res) => 
   const id = Number(req.body.id || 0);
   const row = activeSurvey(req).checklist.find(x => x.id === id);
   if (row && req.file) row.photos.push(`/uploads/${req.file.filename}`);
+  saveUserData(req.session.user.email, req.session.data);
   res.redirect('/survey/checklist');
 });
 
@@ -241,7 +268,7 @@ app.get('/survey/negotiation', auth, (req, res) => {
   const final = Math.max(0, afterRepairs * (1 - Number(s.discountPct || 0) / 100));
   res.send(shell('Negotiation', `<div class='card'><h2>Negotiation Calculator</h2><form method='post' action='/survey/negotiation' class='grid'><p><label>Market Value (€)</label><input name='marketValue' value='${s.marketValue || ''}'></p><p><label>Estimated Repairs (€)</label><input name='repairs' value='${s.repairs || ''}'></p><p><label>Contingency %</label><input name='contingencyPct' value='${s.contingencyPct || '20'}'></p><p><label>Opportunity Discount %</label><input name='discountPct' value='${s.discountPct || '7'}'></p><p><button class='btn'>Calculate</button> <a class='btn alt' href='/app'>Back</a></p></form><hr><p>BCI: <strong>${bci}</strong></p><p>Adjusted value: <strong>€${condAdj.toFixed(0)}</strong></p><p>After repairs + contingency: <strong>€${afterRepairs.toFixed(0)}</strong></p><p>Final offer suggestion: <strong>€${final.toFixed(0)}</strong></p></div>`));
 });
-app.post('/survey/negotiation', auth, (req, res) => { ensureSurveyData(req); Object.assign(activeSurvey(req), req.body); res.redirect('/survey/negotiation'); });
+app.post('/survey/negotiation', auth, (req, res) => { ensureSurveyData(req); Object.assign(activeSurvey(req), req.body); saveUserData(req.session.user.email, req.session.data); res.redirect('/survey/negotiation'); });
 
 app.get('/survey/report', auth, (req, res) => {
   ensureSurveyData(req);
