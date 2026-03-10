@@ -1,0 +1,9 @@
+services:
+  deepkeel:
+    build: .
+    container_name: deepkeel-app
+    env_file:
+      - .env
+    ports:
+      - "9890:9890"
+    restart: unless-stopped
