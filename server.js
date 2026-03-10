@@ -175,7 +175,7 @@ app.get('/app', auth, (req, res) => {
       <p><label>New boat label</label><input name='label' placeholder='e.g. Jeanneau Sun Shine 36'></p>
       <p style='align-self:end'><button class='btn'>Add Boat</button></p>
     </form>
-    <p><a class='btn' href='/survey/vessel'>Vessel Info</a> <a class='btn alt' href='/survey/checklist'>Checklist</a> <a class='btn alt' href='/survey/negotiation'>Negotiation</a> <a class='btn alt' href='/survey/report?print=1'>Printable report</a> <a class='btn alt' href='/logout'>Logout</a></p></div>`));
+    <p><a class='btn' href='/survey/vessel'>Vessel Info</a> <a class='btn alt' href='/survey/checklist'>Checklist</a> <a class='btn alt' href='/survey/gallery'>Image Gallery</a> <a class='btn alt' href='/survey/negotiation'>Negotiation</a> <a class='btn alt' href='/survey/report?print=1'>Printable report</a> <a class='btn alt' href='/logout'>Logout</a></p></div>`));
 });
 
 app.post('/boats/add', auth, (req, res) => {
@@ -263,6 +263,28 @@ app.post('/survey/checklist/item/:id/photo', auth, upload.single('photo'), (req,
   if (row && req.file) row.photos.push(`/uploads/${req.file.filename}`);
   saveUserData(req.session.user.email, req.session.data);
   res.redirect('/survey/checklist');
+});
+
+app.get('/survey/gallery', auth, (req, res) => {
+  ensureSurveyData(req);
+  const s = activeSurvey(req);
+  const items = s.checklist.filter(i => (i.photos || []).length);
+  const grid = items.map(i => `
+    <div class='card'>
+      <h4>#${i.id} ${i.title}</h4>
+      <p class='small'>${i.section}</p>
+      <div>${(i.photos || []).map(ph => `<a href='${ph}' target='_blank' rel='noopener'><img src='${ph}' style='max-width:180px;margin:6px;border:1px solid #2f415a;border-radius:8px'></a>`).join('')}</div>
+    </div>
+  `).join('');
+
+  res.send(shell('Image Gallery', `
+    <div class='card'>
+      <h2>Inspection Image Gallery</h2>
+      <p class='small'>All photos you save from checklist items are collected here.</p>
+      <p><a class='btn alt' href='/survey/checklist'>Back to Checklist</a> <a class='btn alt' href='/app'>Dashboard</a></p>
+    </div>
+    ${grid || `<div class='card'><p>No photos saved yet.</p></div>`}
+  `));
 });
 
 app.get('/survey/negotiation', auth, (req, res) => {
