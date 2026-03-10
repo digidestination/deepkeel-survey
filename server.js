@@ -200,54 +200,60 @@ app.post('/survey/vessel', auth, (req, res) => { ensureSurveyData(req); Object.a
 
 app.get('/survey/checklist', auth, (req, res) => {
   ensureSurveyData(req);
-  const rows = activeSurvey(req).checklist.map(i => `<tr><td>${i.id}</td><td>${i.section}</td><td>${i.title}<div class='small'>${(i.photos||[]).length} photo(s)</div></td><td><span class='badge'>${i.rating}</span></td><td>${i.notes || ''}</td></tr>`).join('');
+  const guidance = (section) => {
+    const s = (section || '').toLowerCase();
+    if (s.includes('hull')) return 'Look for cracks, blisters, fairness distortions, and prior repair signs. Tap-test suspicious areas.';
+    if (s.includes('deck')) return 'Check for soft spots, leaks around fittings, chainplates, hatches, and stanchion movement.';
+    if (s.includes('keel') || s.includes('rudder')) return 'Inspect keel bolts/joint, grounding signs, rudder play, stock alignment, and bearing wear.';
+    if (s.includes('rigging')) return 'Check standing rigging age, terminals, corrosion, turnbuckles, spreaders, and mast fittings.';
+    if (s.includes('engine')) return 'Confirm cold start behavior, leaks, cooling flow, exhaust smoke, drivetrain vibration, and service signs.';
+    return 'Inspect operation, wear, corrosion, leaks, and safety impact. Mark severity based on purchase risk.';
+  };
+
+  const cards = activeSurvey(req).checklist.map(i => `
+    <details class='card'>
+      <summary><strong>#${i.id} — ${i.title}</strong> <span class='small'>(${i.section}) • ${i.rating} • ${(i.photos||[]).length} photo(s)</span></summary>
+      <p class='small' style='margin-top:8px'><strong>What to check:</strong> ${guidance(i.section)}</p>
+      <form method='post' action='/survey/checklist/item/${i.id}' class='grid'>
+        <p><label>Rating</label><select name='rating'>
+          <option ${i.rating==='OK'?'selected':''}>OK</option>
+          <option ${i.rating==='Minor'?'selected':''}>Minor</option>
+          <option ${i.rating==='Moderate'?'selected':''}>Moderate</option>
+          <option ${i.rating==='Critical'?'selected':''}>Critical</option>
+        </select></p>
+        <p style='grid-column:1/-1'><label>Notes</label><textarea name='notes'>${i.notes || ''}</textarea></p>
+        <p><button class='btn'>Save Rating + Notes</button></p>
+      </form>
+      <form method='post' action='/survey/checklist/item/${i.id}/photo' enctype='multipart/form-data' class='grid'>
+        <p><label>Add photo</label><input type='file' name='photo' accept='image/*' required></p>
+        <p style='align-self:end'><button class='btn alt'>Upload Photo</button></p>
+      </form>
+      ${(i.photos||[]).length ? `<div>${i.photos.map(ph=>`<img src='${ph}' style='max-width:120px;margin:4px;border:1px solid #d7e1f5;border-radius:8px'>`).join('')}</div>` : ''}
+    </details>
+  `).join('');
+
   res.send(shell('Checklist', `
     <div class='card'>
       <h2>120-Point Checklist</h2>
-      <form method='post' action='/survey/checklist/rate' class='grid'>
-        <p><label>Item ID</label><input name='id' type='number' min='1' max='120' required></p>
-        <p><label>Rating</label><select name='rating'><option>OK</option><option>Minor</option><option>Moderate</option><option>Critical</option></select></p>
-        <p style='grid-column:1/-1'><label>Notes</label><textarea name='notes'></textarea></p>
-        <p><button class='btn'>Update</button></p>
-      </form>
-      <hr>
-      <form method='post' action='/survey/checklist/photo' enctype='multipart/form-data' class='grid'>
-        <p><label>Item ID for Photo</label><input name='id' type='number' min='1' max='120' required></p>
-        <p><label>Photo</label><input type='file' name='photo' accept='image/*' required></p>
-        <p><button class='btn alt'>Upload Photo to Item</button></p>
-      </form>
-      <p class='small'>Offline-first: checklist rating/notes forms auto-draft in browser localStorage.</p>
+      <p class='small'>Tap an item to expand details, then rate, add notes, and upload photos in-place.</p>
       <p><a class='btn alt' href='/app'>Back</a></p>
     </div>
-    <div class='card'><table><thead><tr><th>ID</th><th>Section</th><th>Item</th><th>Rating</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <script>
-      const form = document.querySelector("form[action='/survey/checklist/rate']");
-      const key = 'deepkeel-checklist-draft';
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        try { const d = JSON.parse(saved); ['id','rating','notes'].forEach(k => { if (d[k]) form.elements[k].value = d[k]; }); } catch(e) {}
-      }
-      form.addEventListener('input', () => {
-        const d = { id: form.elements.id.value, rating: form.elements.rating.value, notes: form.elements.notes.value };
-        localStorage.setItem(key, JSON.stringify(d));
-      });
-      form.addEventListener('submit', () => localStorage.removeItem(key));
-    </script>
+    ${cards}
   `));
 });
 
-app.post('/survey/checklist/rate', auth, (req, res) => {
+app.post('/survey/checklist/item/:id', auth, (req, res) => {
   ensureSurveyData(req);
-  const id = Number(req.body.id || 0);
+  const id = Number(req.params.id || 0);
   const row = activeSurvey(req).checklist.find(x => x.id === id);
   if (row) { row.rating = req.body.rating || 'OK'; row.notes = req.body.notes || ''; }
   saveUserData(req.session.user.email, req.session.data);
   res.redirect('/survey/checklist');
 });
 
-app.post('/survey/checklist/photo', auth, upload.single('photo'), (req, res) => {
+app.post('/survey/checklist/item/:id/photo', auth, upload.single('photo'), (req, res) => {
   ensureSurveyData(req);
-  const id = Number(req.body.id || 0);
+  const id = Number(req.params.id || 0);
   const row = activeSurvey(req).checklist.find(x => x.id === id);
   if (row && req.file) row.photos.push(`/uploads/${req.file.filename}`);
   saveUserData(req.session.user.email, req.session.data);
